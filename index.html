@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShiftTrack - Employee Attendance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+        .clock-circle {
+            width: 220px;
+            height: 220px;
+            border: 8px solid #3b82f6;
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        .map-container {
+            height: 300px;
+            width: 100%;
+            border-radius: 0.5rem;
+        }
+        /* Leaflet map adjustments */
+        .leaflet-container {
+            border-radius: 0.5rem;
+        }
+        .leaflet-control-attribution {
+            display: none !important;
+        }
+        .workplace-marker {
+            background-color: #3b82f6;
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 20px !important;
+            height: 20px !important;
+        }
+        .current-location-marker {
+            background-color: #ef4444;
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 20px !important;
+            height: 20px !important;
+        }
+        .geofence-circle {
+            fill-opacity: 0.2;
+            stroke: true;
+            stroke-opacity: 0.8;
+            stroke-width: 2;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Main Container -->
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg">
+            <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-clock text-2xl"></i>
+                    <h1 class="text-2xl font-bold">ShiftTrack</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="hidden md:flex items-center space-x-2">
+                        <img src="https://ui-avatars.com/api/?name=John+Doe&background=random" alt="Profile" class="w-8 h-8 rounded-full">
+                        <span>John Doe</span>
+                    </div>
+                    <button class="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow container mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Left Column - User Info and Clock -->
+                <div class="lg:col-span-1 space-y-6">
+                    <!-- User Profile Card -->
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden slide-in">
+                        <div class="gradient-bg p-4 text-white">
+                            <div class="flex items-center space-x-4">
+                                <img src="https://ui-avatars.com/api/?name=John+Doe&background=random" alt="Profile" class="w-16 h-16 rounded-full border-2 border-white">
+                                <div>
+                                    <h2 class="text-xl font-bold">John Doe</h2>
+                                    <p class="text-blue-100">Production Team</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4">
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p class="text-gray-500">Employee ID</p>
+                                    <p class="font-medium">EMP-2023-001</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">Shift</p>
+                                    <p class="font-medium">Morning (8AM-4PM)</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">Department</p>
+                                    <p class="font-medium">Manufacturing</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">Role</p>
+                                    <p class="font-medium">Operator</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Clock Widget -->
+                    <div class="bg-white rounded-xl shadow-md p-6 text-center slide-in">
+                        <div class="flex flex-col items-center">
+                            <div class="clock-circle rounded-full flex items-center justify-center mb-6 pulse">
+                                <div class="text-center">
+                                    <div id="current-time" class="text-3xl font-bold">08:45:23</div>
+                                    <div id="current-date" class="text-gray-600">June 15, 2023</div>
+                                </div>
+                            </div>
+                            
+                            <div id="clock-status" class="mb-6">
+                                <span class="bg-red-100 text-red-800 px-4 py-2 rounded-full text-sm font-medium">
+                                    <i class="fas fa-clock mr-2"></i>Not Clocked In
+                                </span>
+                            </div>
+                            
+                            <button id="clock-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center">
+                                <i class="fas fa-fingerprint mr-2"></i> Clock In
+                            </button>
+                            
+                            <div class="mt-4 text-sm text-gray-500">
+                                <i class="fas fa-map-marker-alt mr-1"></i> Location: <span id="location-status">Detecting...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Shift Info -->
+                    <div class="bg-white rounded-xl shadow-md p-6 slide-in">
+                        <h3 class="font-bold text-lg mb-4 flex items-center">
+                            <i class="fas fa-calendar-alt mr-2 text-blue-600"></i> Today's Shift
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Shift:</span>
+                                <span class="font-medium">Morning Shift</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Start Time:</span>
+                                <span class="font-medium">08:00 AM</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">End Time:</span>
+                                <span class="font-medium">04:00 PM</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Duration:</span>
+                                <span class="font-medium">8 hours</span>
+                            </div>
+                            <div class="pt-3 mt-3 border-t border-gray-200">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-600">Next Shift:</span>
+                                    <span class="font-medium">Tomorrow, 8AM</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column - Attendance and Map -->
+                <div class="lg:col-span-2 space-y-6">
+                    <!-- Attendance Summary -->
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden slide-in">
+                        <div class="gradient-bg p-4 text-white">
+                            <h2 class="text-xl font-bold flex items-center">
+                                <i class="fas fa-chart-bar mr-2"></i> Attendance Summary
+                            </h2>
+                        </div>
+                        <div class="p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-sm text-gray-600">This Month</p>
+                                            <p class="text-2xl font-bold">22</p>
+                                            <p class="text-sm text-gray-600">Days Worked</p>
+                                        </div>
+                                        <div class="bg-blue-100 p-3 rounded-full">
+                                            <i class="fas fa-calendar-check text-blue-600"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-yellow-50 p-4 rounded-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-sm text-gray-600">Late Arrivals</p>
+                                            <p class="text-2xl font-bold">3</p>
+                                            <p class="text-sm text-gray-600">This Month</p>
+                                        </div>
+                                        <div class="bg-yellow-100 p-3 rounded-full">
+                                            <i class="fas fa-clock text-yellow-600"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-sm text-gray-600">On Time</p>
+                                            <p class="text-2xl font-bold">92%</p>
+                                            <p class="text-sm text-gray-600">This Month</p>
+                                        </div>
+                                        <div class="bg-green-100 p-3 rounded-full">
+                                            <i class="fas fa-check-circle text-green-600"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <h3 class="font-medium mb-2">Today's Timeline</h3>
+                                <div class="relative">
+                                    <!-- Timeline -->
+                                    <div class="absolute left-4 h-full w-0.5 bg-gray-200"></div>
+                                    <div class="space-y-4 pl-8">
+                                        <div class="relative">
+                                            <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-blue-500 border-4 border-blue-100"></div>
+                                            <div class="bg-gray-50 p-3 rounded-lg">
+                                                <div class="flex justify-between items-center">
+                                                    <span class="font-medium">Clock In</span>
+                                                    <span class="text-sm text-gray-500">08:02 AM</span>
+                                                </div>
+                                                <div class="text-sm text-gray-600 mt-1">
+                                                    <i class="fas fa-map-marker-alt mr-1 text-blue-500"></i> Main Factory (GPS: 12.34, 56.78)
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="relative">
+                                            <div class="absolute -left-8 top-1 w-4 h-4 rounded-full bg-gray-300 border-4 border-gray-100"></div>
+                                            <div class="bg-gray-50 p-3 rounded-lg opacity-50">
+                                                <div class="flex justify-between items-center">
+                                                    <span class="font-medium">Clock Out</span>
+                                                    <span class="text-sm text-gray-500">--:-- --</span>
+                                                </div>
+                                                <div class="text-sm text-gray-600 mt-1">
+                                                    <i class="fas fa-map-marker-alt mr-1 text-gray-500"></i> Waiting for clock out
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Location Map -->
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden slide-in">
+                        <div class="gradient-bg p-4 text-white">
+                            <h2 class="text-xl font-bold flex items-center">
+                                <i class="fas fa-map-marked-alt mr-2"></i> Location Tracking
+                            </h2>
+                        </div>
+                        <div class="p-4">
+                            <div id="map" class="map-container"></div>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <div class="flex items-center text-sm">
+                                    <div class="workplace-marker mr-2"></div>
+                                    <span>Workplace</span>
+                                </div>
+                                <div class="flex items-center text-sm">
+                                    <div class="current-location-marker mr-2"></div>
+                                    <span>Your Location</span>
+                                </div>
+                            </div>
+                            <div class="mt-4 text-sm text-gray-600">
+                                <p><i class="fas fa-info-circle mr-2 text-blue-500"></i> You can only clock in/out when within 200m of your workplace.</p>
+                                <p class="mt-1"><i class="fas fa-satellite-dish mr-2 text-blue-500"></i> GPS Accuracy: <span id="gps-accuracy">High</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Attendance -->
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden slide-in">
+                        <div class="gradient-bg p-4 text-white">
+                            <h2 class="text-xl font-bold flex items-center">
+                                <i class="fas fa-history mr-2"></i> Recent Attendance
+                            </h2>
+                        </div>
+                        <div class="p-4">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clock In</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clock Out</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        <tr>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Jun 14, 2023</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">08:01 AM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">04:05 PM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                    On Time
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                                <button class="text-blue-600 hover:text-blue-900 mr-2"><i class="fas fa-eye"></i></button>
+                                                <button class="text-gray-600 hover:text-gray-900"><i class="fas fa-download"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Jun 13, 2023</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">08:15 AM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">04:00 PM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                                    15 mins late
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                                <button class="text-blue-600 hover:text-blue-900 mr-2"><i class="fas fa-eye"></i></button>
+                                                <button class="text-gray-600 hover:text-gray-900"><i class="fas fa-download"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Jun 12, 2023</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">08:00 AM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">03:50 PM</td>
+                                            <td class="px-4 py-3 whitespace-nowrap">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                                    10 mins early
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                                <button class="text-blue-600 hover:text-blue-900 mr-2"><i class="fas fa-eye"></i></button>
+                                                <button class="text-gray-600 hover:text-gray-900"><i class="fas fa-download"></i></button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-4 flex justify-between items-center">
+                                <div class="text-sm text-gray-500">
+                                    Showing <span class="font-medium">1</span> to <span class="font-medium">3</span> of <span class="font-medium">30</span> records
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="px-3 py-1 border rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                        Previous
+                                    </button>
+                                    <button class="px-3 py-1 border rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-gray-800 text-white py-6">
+            <div class="container mx-auto px-4">
+                <div class="flex flex-col md:flex-row justify-between items-center">
+                    <div class="mb-4 md:mb-0">
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-clock text-xl"></i>
+                            <span class="text-xl font-bold">ShiftTrack</span>
+                        </div>
+                        <p class="text-gray-400 mt-1">Employee Attendance Management System</p>
+                    </div>
+                    <div class="flex space-x-6">
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fas fa-question-circle"></i> Help
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fas fa-cog"></i> Settings
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fas fa-envelope"></i> Contact
+                        </a>
+                    </div>
+                </div>
+                <div class="mt-6 pt-6 border-t border-gray-700 text-center text-gray-400 text-sm">
+                    &copy; 2023 ShiftTrack. All rights reserved.
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Clock Modal -->
+    <div id="clock-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 slide-in">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold" id="modal-title">Clock In Confirmation</h3>
+                <button id="close-modal" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <div class="flex items-center mb-2">
+                    <i class="fas fa-clock text-blue-500 mr-2"></i>
+                    <span id="modal-time">Current Time: 08:02 AM</span>
+                </div>
+                <div class="flex items-center mb-2">
+                    <i class="fas fa-map-marker-alt text-blue-500 mr-2"></i>
+                    <span id="modal-location">Location: Main Factory (12.34, 56.78)</span>
+                </div>
+                <div class="flex items-center">
+                    <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                    <span id="modal-status">Status: Within allowed location</span>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button id="cancel-clock" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">
+                    Cancel
+                </button>
+                <button id="confirm-clock" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    Confirm Clock In
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center hidden slide-in">
+        <i class="fas fa-check-circle mr-2"></i>
+        <span id="notification-message">Clock in successful!</span>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Update current time
+        function updateClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            const dateStr = now.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            document.getElementById('current-time').textContent = timeStr;
+            document.getElementById('current-date').textContent = dateStr;
+        }
+        
+        setInterval(updateClock, 1000);
+        updateClock();
+        
+        // Initialize the map
+        function initMap() {
+            // Workplace coordinates (fixed location)
+            const workplaceCoords = [12.34, 56.78];
+            
+            // Create map centered on workplace
+            const map = L.map('map').setView(workplaceCoords, 16);
+            
+            // Add tile layer (OpenStreetMap)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Add workplace marker
+            const workplaceMarker = L.circleMarker(workplaceCoords, {
+                className: 'workplace-marker',
+                radius: 10
+            }).addTo(map);
+            
+            workplaceMarker.bindPopup("<b>Workplace</b><br>Main Factory").openPopup();
+            
+            // Add geofence circle (200m radius)
+            L.circle(workplaceCoords, {
+                color: '#3b82f6',
+                fillColor: '#3b82f6',
+                fillOpacity: 0.2,
+                radius: 200,
+                className: 'geofence-circle'
+            }).addTo(map);
+            
+            // Simulate current location (in a real app, this would come from geolocation API)
+            const currentLocation = [12.3405, 56.781]; // Slightly offset from workplace
+            
+            // Add current location marker
+            const currentLocationMarker = L.circleMarker(currentLocation, {
+                className: 'current-location-marker',
+                radius: 10
+            }).addTo(map);
+            
+            currentLocationMarker.bindPopup("<b>Your Location</b>");
+            
+            // Calculate distance between workplace and current location (in meters)
+            const distance = map.distance(workplaceCoords, currentLocation);
+            
+            // Update location status
+            let locationStatus = "Outside allowed area";
+            let locationClass = "text-red-500";
+            
+            if (distance <= 200) {
+                locationStatus = "Within allowed area";
+                locationClass = "text-green-500";
+            }
+            
+            document.getElementById('location-status').innerHTML = 
+                `<span class="${locationClass}">${locationStatus} (${Math.round(distance)}m from workplace)</span>`;
+            
+            // Update GPS accuracy randomly (simulation)
+            const accuracies = ["High", "Medium", "Low"];
+            document.getElementById('gps-accuracy').textContent = 
+                accuracies[Math.floor(Math.random() * accuracies.length)];
+            
+            // In a real app, you would use the browser's geolocation API:
+            /*
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        const userLat = position.coords.latitude;
+                        const userLng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        
+                        // Update current location marker
+                        currentLocationMarker.setLatLng([userLat, userLng]);
+                        
+                        // Calculate distance
+                        const realDistance = map.distance(workplaceCoords, [userLat, userLng]);
+                        
+                        // Update status
+                        // ... same logic as above ...
+                    },
+                    (error) => {
+                        console.error("Geolocation error:", error);
+                        document.getElementById('location-status').textContent = "Location error";
+                    },
+                    { enableHighAccuracy: true }
+                );
+            }
+            */
+        }
+        
+        // Initialize the map when the page loads
+        window.onload = initMap;
+        
+        // Clock in/out functionality
+        const clockBtn = document.getElementById('clock-btn');
+        const clockStatus = document.getElementById('clock-status');
+        const clockModal = document.getElementById('clock-modal');
+        const closeModal = document.getElementById('close-modal');
+        const cancelClock = document.getElementById('cancel-clock');
+        const confirmClock = document.getElementById('confirm-clock');
+        const notification = document.getElementById('notification');
+        
+        let isClockedIn = false;
+        
+        clockBtn.addEventListener('click', () => {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            if (isClockedIn) {
+                // Prepare clock out modal
+                document.getElementById('modal-title').textContent = 'Clock Out Confirmation';
+                document.getElementById('modal-time').textContent = `Current Time: ${timeStr}`;
+                document.getElementById('modal-location').textContent = 'Location: Main Factory (12.34, 56.78)';
+                document.getElementById('modal-status').textContent = 'Status: Within allowed location';
+                confirmClock.textContent = 'Confirm Clock Out';
+            } else {
+                // Prepare clock in modal
+                document.getElementById('modal-title').textContent = 'Clock In Confirmation';
+                document.getElementById('modal-time').textContent = `Current Time: ${timeStr}`;
+                document.getElementById('modal-location').textContent = 'Location: Main Factory (12.34, 56.78)';
+                document.getElementById('modal-status').textContent = 'Status: Within allowed location';
+                confirmClock.textContent = 'Confirm Clock In';
+            }
+            
+            clockModal.classList.remove('hidden');
+        });
+        
+        closeModal.addEventListener('click', () => {
+            clockModal.classList.add('hidden');
+        });
+        
+        cancelClock.addEventListener('click', () => {
+            clockModal.classList.add('hidden');
+        });
+        
+        confirmClock.addEventListener('click', () => {
+            clockModal.classList.add('hidden');
+            
+            isClockedIn = !isClockedIn;
+            
+            if (isClockedIn) {
+                clockBtn.innerHTML = '<i class="fas fa-fingerprint mr-2"></i> Clock Out';
+                clockBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center';
+                clockStatus.innerHTML = '<span class="bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-medium"><i class="fas fa-check-circle mr-2"></i> Clocked In - 00:05:12</span>';
+                
+                // Start timer
+                startTimer();
+                
+                // Show notification
+                showNotification('Clock in successful!', 'green');
+            } else {
+                clockBtn.innerHTML = '<i class="fas fa-fingerprint mr-2"></i> Clock In';
+                clockBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center';
+                clockStatus.innerHTML = '<span class="bg-red-100 text-red-800 px-4 py-2 rounded-full text-sm font-medium"><i class="fas fa-clock mr-2"></i> Not Clocked In</span>';
+                
+                // Show notification
+                showNotification('Clock out successful!', 'green');
+            }
+        });
+        
+        // Timer function for clocked in duration
+        function startTimer() {
+            let seconds = 0;
+            const timerInterval = setInterval(() => {
+                if (!isClockedIn) {
+                    clearInterval(timerInterval);
+                    return;
+                }
+                
+                seconds++;
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                
+                clockStatus.innerHTML = `<span class="bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-medium"><i class="fas fa-check-circle mr-2"></i> Clocked In - ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}</span>`;
+            }, 1000);
+        }
+        
+        // Notification function
+        function showNotification(message, color) {
+            notification.className = `fixed bottom-4 right-4 bg-${color}-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center slide-in`;
+            document.getElementById('notification-message').textContent = message;
+            notification.classList.remove('hidden');
+            
+            setTimeout(() => {
+                notification.classList.add('hidden');
+            }, 3000);
+        }
+        
+        // Simulate auto clock out after shift end
+        function checkShiftEnd() {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            
+            // Assuming shift ends at 4:00 PM (16:00)
+            if (isClockedIn && currentHour === 16 && currentMinute === 0) {
+                isClockedIn = false;
+                clockBtn.innerHTML = '<i class="fas fa-fingerprint mr-2"></i> Clock In';
+                clockBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center';
+                clockStatus.innerHTML = '<span class="bg-red-100 text-red-800 px-4 py-2 rounded-full text-sm font-medium"><i class="fas fa-clock mr-2"></i> Not Clocked In</span>';
+                
+                showNotification('Auto clock out at shift end time.', 'blue');
+            }
+        }
+        
+        setInterval(checkShiftEnd, 60000); // Check every minute
+    </script>
+<p style="border-radius: 8px; text-align: center; font-size: 12px; color: #fff; margin-top: 16px;position: fixed; left: 8px; bottom: 8px; z-index: 10; background: rgba(0, 0, 0, 0.8); padding: 4px 8px;">Made with <img src="https://enzostvs-deepsite.hf.space/logo.svg" alt="DeepSite Logo" style="width: 16px; height: 16px; vertical-align: middle;display:inline-block;margin-right:3px;filter:brightness(0) invert(1);"><a href="https://enzostvs-deepsite.hf.space" style="color: #fff;text-decoration: underline;" target="_blank" >DeepSite</a> - 🧬 <a href="https://enzostvs-deepsite.hf.space?remix=Afroaqib/attendify" style="color: #fff;text-decoration: underline;" target="_blank" >Remix</a></p></body>
+</html>
